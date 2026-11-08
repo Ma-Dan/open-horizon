@@ -8,6 +8,12 @@ include_directories(deps/pugixml-1.4/src)
 include_directories(deps/miso/include)
 include_directories(.)
 
+if(APPLE)
+    # platform_dialogs.cpp contains Objective-C syntax (Cocoa dialogs)
+    set_source_files_properties(util/platform_dialogs.cpp PROPERTIES
+        COMPILE_FLAGS "-x objective-c++")
+endif()
+
 define_source_files(demo)
 define_source_files(containers)
 define_source_files(game)
@@ -53,6 +59,22 @@ if (WIN32)
 elseif (APPLE)
     include_directories(deps/glfw-bin/include)
     target_link_libraries(open_horizon ${CMAKE_CURRENT_SOURCE_DIR}/deps/glfw-bin/lib/libglfw3.a)
+
+    # macOS: use the bundled lua 5.2 static library (script.cpp uses luaL_newstate, 5.2 API)
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/lua-5.2.4/include)
+    target_link_libraries(open_horizon ${CMAKE_CURRENT_SOURCE_DIR}/deps/lua-5.2.4/liblua52.a)
+
+    # macOS: OpenAL is provided as a system framework (headers: AL/al.h).
+    # Source includes "AL/al.h", framework headers are flat, so provide an AL/ shim dir.
+    if(NOT CMAKE_OSX_SYSROOT)
+        execute_process(COMMAND xcrun --show-sdk-path OUTPUT_VARIABLE CMAKE_OSX_SYSROOT OUTPUT_STRIP_TRAILING_WHITESPACE)
+    endif()
+    set(AL_SHIM_DIR ${CMAKE_BINARY_DIR}/openal_include/AL)
+    file(MAKE_DIRECTORY ${AL_SHIM_DIR})
+    file(COPY ${CMAKE_OSX_SYSROOT}/System/Library/Frameworks/OpenAL.framework/Headers/al.h DESTINATION ${AL_SHIM_DIR})
+    file(COPY ${CMAKE_OSX_SYSROOT}/System/Library/Frameworks/OpenAL.framework/Headers/alc.h DESTINATION ${AL_SHIM_DIR})
+    include_directories(${CMAKE_BINARY_DIR}/openal_include)
+    target_link_libraries(open_horizon "-framework OpenAL")
 
     find_library(COCOA_LIBRARY Cocoa)
     link_directories(${COCOA_LIBRARY})

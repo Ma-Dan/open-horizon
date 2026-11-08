@@ -49,20 +49,31 @@
         <!--right stick-->
         <axis2 control="camera_yaw" invert="true" dead="0.1"/>
         <axis3 control="camera_pitch" invert="true" dead="0.1"/>
-        <btn14 control="change_camera"/>
+        <btn9 control="change_camera"/>
 
-        <!--start-->
-        <btn11 control="pause"/>
+        <!--dpad-->
+        <btn11 control="menu_up"/>
+        <btn12 control="menu_next"/>
+        <btn13 control="menu_down"/>
+        <btn14 control="menu_prev"/>
 
-        <!--triggers-->
-        <btn6 control="brake"/>
-        <btn7 control="throttle"/>
+        <!--menu key-->
+        <btn7 control="pause"/>
 
-        <!--buttons-->
-        <btn3 control="change_weapon"/>
-        <btn4 control="change_target"/>
+        <!--triggers: left=brake, right=throttle (macOS reports them as axis4/axis5, 0..1)-->
+        <axis4 control="brake" dead="0.5"/>
+        <axis5 control="throttle" dead="0.5"/>
+
+        <!--shoulders: yaw left/right-->
+        <btn4 control="-yaw"/>
+        <btn5 control="+yaw"/>
+
+        <!--buttons: A=mgun, B=missile, X=change_weapon, Y=change_target, View=flares-->
+        <btn2 control="change_weapon"/>
+        <btn3 control="change_target"/>
         <btn1 control="missile"/>
         <btn0 control="mgun"/>
+        <btn6 control="flares"/>
         <btn1 control="menu_next"/>
         <btn0 control="menu_prev"/>
     </joystick>

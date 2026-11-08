@@ -13,7 +13,7 @@
     #include <windows.h>
     #include <shlobj.h>
 #elif __APPLE__
-    #include <Cocoa/Cocoa.h>
+    #import <Cocoa/Cocoa.h>
 #endif
 
 //------------------------------------------------------------
