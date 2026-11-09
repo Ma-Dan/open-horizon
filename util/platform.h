@@ -39,6 +39,9 @@ public:
     static std::string open_folder_dialog();
     static bool show_msgbox(std::string message);
 
+    //debug: raw access for key injection (auto-drive)
+    static std::map<int, bool> &debug_buttons() { return m_buttons; }
+
     platform(): m_window(0) {}
 
 private:

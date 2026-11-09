@@ -34,9 +34,13 @@ void main()
     float len = (p.w * 5.0 - 2.0 + v.y) * 200.0;
     vec3 n = r * p.x + u * p.y;
     v.xyz = pos.xyz + n * radius;
-    v.xyz += size * normalize(cross(camera_pos.xyz - v - dir.xyz * 100.0, n)) + dir.xyz * len;
 
-    color = vec4(1.0, 1.0, 1.0, (0.5 - abs(p.w-0.5)) * 0.05);
+    vec3 cr = cross(camera_pos.xyz - v - dir.xyz * 100.0, n);
+    float crl = length(cr);
+    vec3 ext = (crl > 0.0001) ? cr / crl : vec3(0.0);
+    v.xyz += size * ext + dir.xyz * len;
+
+    color = vec4(1.0, 1.0, 1.0, clamp((0.5 - abs(p.w-0.5)) * 0.05, 0.0, 1.0));
 
     gl_Position = gl_ModelViewProjectionMatrix * vec4(v, 1.0);
 }
