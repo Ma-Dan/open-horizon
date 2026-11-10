@@ -22,3 +22,8 @@ build-mission_editor-Desktop*
 *.stash
 *.user
 .DS_Store
+Ace Combat 7/
+build/
+debug-work/
+XJ04429/
+*.rar

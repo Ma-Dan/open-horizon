@@ -5,6 +5,7 @@
 #include "platform.h"
 #include "GLFW/glfw3.h"
 #include "render/render.h"
+#include "scene/camera.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -136,7 +137,24 @@ static void debug_frame_hooks(int w, int h)
         const int after = getenv("OH_DUMP_AFTER") ? atoi(getenv("OH_DUMP_AFTER")) : 0;
 
         if (frame_no > after && dumped < maxd && (frame_no - after) % every == 0)
+        {
             dump_frame(dir, w, h, frame_no), ++dumped;
+
+            //OH_CAMDUMP: log scene camera state next to each dump (stderr -> run log)
+            if (getenv("OH_CAMDUMP"))
+            {
+                const auto &cam = nya_scene::get_camera();
+                const auto &p = cam.get_pos();
+                const auto &m = cam.get_view_matrix();
+                const auto dv = cam.get_dir();
+                fprintf(stderr, "CAMV f%07d pos=%.2f,%.2f,%.2f view=%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,"
+                        "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f dir=%.4f,%.4f,%.4f\n",
+                        frame_no, p.x, p.y, p.z,
+                        m[0][0], m[0][1], m[0][2], m[1][0], m[1][1], m[1][2],
+                        m[2][0], m[2][1], m[2][2], m[3][0], m[3][1], m[3][2],
+                        dv.x, dv.y, dv.z);
+            }
+        }
     }
 
     if (!getenv("OH_FF_AUTO"))
@@ -162,6 +180,51 @@ static void debug_frame_hooks(int w, int h)
 
     if (frame_no == ff_throttle_from + 60 * 100) //auto-quit ~100s into flight
         buttons[GLFW_KEY_ESCAPE] = true;
+
+    //OH_DIVE: pull up 10s (climb), then dive 5s — brings terrain into view from altitude
+    //NB: in this game GLFW_KEY_DOWN = pull up (climb), GLFW_KEY_UP = push (nose down)
+    if (getenv("OH_DIVE"))
+    {
+        const int t0 = ff_throttle_from;
+        auto hold = [&](int from, int to, int key)
+        {
+            if (frame_no == t0 + from) buttons[key] = true;
+            if (frame_no == t0 + to) buttons[key] = false;
+        };
+        hold(600, 1200, GLFW_KEY_DOWN);  //climb 10s
+        hold(1500, 1800, GLFW_KEY_UP);   //dive 5s
+        if (frame_no == t0 + 2400) buttons[GLFW_KEY_ESCAPE] = true; //end
+    }
+
+    //OH_LOOKDOWN: pull up ~45s (Miami default plane climbs ~80ft/s -> ~3000-3600ft),
+    //then hold a dive to look down at terrain, then recover
+    if (getenv("OH_LOOKDOWN"))
+    {
+        const int t0 = ff_throttle_from;
+        auto hold = [&](int from, int to, int key)
+        {
+            if (frame_no == t0 + from) buttons[key] = true;
+            if (frame_no == t0 + to) buttons[key] = false;
+        };
+        hold(300, 3000, GLFW_KEY_DOWN);   //climb 45s -> 3000ft+
+        hold(3300, 3600, GLFW_KEY_UP);    //dive 5s
+        hold(3900, 4020, GLFW_KEY_DOWN);  //recover
+        if (frame_no == t0 + 4200) buttons[GLFW_KEY_ESCAPE] = true; //end
+    }
+
+    //OH_STEADY: pulsed climb (1.2s pull / 2.6s rest x12 -> ~3000ft without looping),
+    //then hold steady level flight: stationary state for phase-invariant statistics.
+    if (getenv("OH_STEADY"))
+    {
+        const int t0 = ff_throttle_from;
+        for (int k = 0; k < 12; ++k)
+        {
+            const int s = t0 + 300 + k * 228;
+            if (frame_no == s) buttons[GLFW_KEY_DOWN] = true;
+            if (frame_no == s + 72) buttons[GLFW_KEY_DOWN] = false;
+        }
+        if (frame_no == t0 + 4600) buttons[GLFW_KEY_ESCAPE] = true; //end
+    }
 
     //diagnostic: magenta clear color (env OH_MAGENTA) - reveals coverage holes
     if (frame_no == 10 && getenv("OH_MAGENTA"))

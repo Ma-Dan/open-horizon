@@ -1199,13 +1199,25 @@ void fhm_location::draw_landscape()
 
             g.tex.internal().set();
 
+            //debug: OH_LODFORCE=hi|mid|low pins every group to one LOD level
+            static int lod_force = -2; // -2 uninit, -1 off, 0 hi, 1 mid, 2 low
+            if (lod_force == -2)
+            {
+                const char *v = getenv("OH_LODFORCE");
+                lod_force = v ? (v[0]=='h' ? 0 : (v[0]=='m' ? 1 : 2)) : -1;
+            }
+
             if (g.mid_count > 0)
             {
                 const float hi_dist = 8000.0f;
                 const float mid_dist = 16000.0f;
-                if (sq < hi_dist * hi_dist)
+                int lod = sq < hi_dist * hi_dist ? 0 : (sq < mid_dist * mid_dist ? 1 : 2);
+                if (lod_force >= 0)
+                    lod = lod_force;
+
+                if (lod == 0)
                     m_landscape.vbo.draw(g.hi_offset, g.hi_count);
-                else if (sq < mid_dist * mid_dist)
+                else if (lod == 1)
                     m_landscape.vbo.draw(g.mid_offset, g.mid_count);
                 else
                     m_landscape.vbo.draw(g.low_offset, g.low_count);
