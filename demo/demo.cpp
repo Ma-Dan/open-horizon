@@ -24,6 +24,8 @@
 #include <thread>
 #include <chrono>
 #include <atomic>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "GLFW/glfw3.h"
 
@@ -61,6 +63,21 @@ int main()
     if (!platform.init(config::get_var_int("screen_width"), config::get_var_int("screen_height"), "Open Horizon", config::get_var_bool("fullscreen")))
         return -1;
 
+    //Per-GUID gamepad mapping for the macOS "Xbox Wireless Controller" layout.
+    //The raw layout (Game Controller framework) puts the right stick on raw axes 3/4,
+    //the analog triggers on 2/5 resting at -1, LS/RS on buttons 8/9 and guide on 10 -
+    //none of which GLFW's built-in SDL DB covers, so joysticks reported via raw axes
+    //had a resting trigger feeding camera_yaw (default view stuck 90 degrees left)
+    //and the right stick unmapped. With this mapping glfwGetGamepadState reports the
+    //standardized layout that joystick.xml expects. Derived with debug-work/joy_probe.c.
+    glfwUpdateGamepadMappings(
+        "030000005e040000e00200001b010000,Xbox Wireless Controller (open-horizon),"
+        "platform:Mac OS X,"
+        "a:b0,b:b1,x:b2,y:b3,leftshoulder:b4,rightshoulder:b5,back:b6,start:b7,"
+        "guide:b10,leftstick:b8,rightstick:b9,"
+        "dpup:b11,dpright:b12,dpdown:b13,dpleft:b14,"
+        "leftx:a0,lefty:a1~,rightx:a3,righty:a4~,lefttrigger:+a2,righttrigger:+a5");
+
     std::vector<joystick_config> joysticks;
 
     for (int i = 0; glfwJoystickPresent(i); ++i)
@@ -74,7 +91,9 @@ int main()
         int axis_count = 0, buttons_count = 0;
         glfwGetJoystickAxes(i, &axis_count);
         glfwGetJoystickButtons(i, &buttons_count);
-        nya_log::log("joy%d: %s %d axis %d buttons\n", i, name, axis_count, buttons_count);
+        nya_log::log("joy%d: %s %d axis %d buttons %s\n", i, name, axis_count, buttons_count,
+                     glfwJoystickIsGamepad(i) ? "(standard gamepad mapping)" :
+                                                "(no gamepad mapping - raw axes, order varies by connection)");
     }
     auto render = nya_render::render_buffered(nya_render::get_api_interface());
     nya_render::set_render_api(&render);
@@ -318,6 +337,13 @@ int main()
                         }
                     }
 
+                    //pick up the freshest polled input: copy the shared controls at
+                    //loop start. Copying only in end_frame() (i.e. after the frame is
+                    //drawn) leaves every button press one full frame staler, which
+                    //gamepad players feel as trigger delay.
+                    controls = controls_update;
+                    menu_controls = menu_controls_update;
+
                     if (active_game_mode)
                     {
                         if(is_server || is_client)
@@ -439,13 +465,19 @@ int main()
                         scene.camera.reset_delta_rot();
                         reset_camera = false;
                     }
-/*
+                    //right-stick free look (see also joystick_config::apply_controls,
+                    //which fills controls.cam_rot): stick deflection is the view offset
+                    //relative to the flight direction, springing back on release.
+                    //Full deflection = 90 degrees each way, proportional below that -
+                    //the original pi yaw gain mapped half-stick to a full 90 degree jump.
+                    //Skipped while the mouse drags the view, while a target is tracked
+                    //(its block drives the camera) and in the hangar viewer.
                     if (!mouse_l && !controls.change_target && !viewer_mode)
                     {
                         scene.camera.reset_delta_rot();
-                        scene.camera.add_delta_rot(-controls.cam_rot.x * nya_math::constants::pi_2, -controls.cam_rot.y * nya_math::constants::pi);
+                        scene.camera.add_delta_rot(-controls.cam_rot.x * nya_math::constants::pi_2,
+                                                   -controls.cam_rot.y * nya_math::constants::pi_2);
                     }
-*/
                 }
 
                 server.close();
@@ -493,53 +525,88 @@ int main()
     auto menu_controls = gui::menu_controls();
     while (!game_thread.platform_terminate)
     {
-        if(!game_thread.frame_pending)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            continue;
-        }
-
-        render.push();
-
-        game_thread.controls_update = controls;
-        game_thread.menu_controls_update = menu_controls;
-        game_thread.frame_pending = false;
-        render.execute();
-        platform.end_frame();
-
-        if(platform.should_terminate())
-            game_thread.platform_terminate = true;
-        game_thread.platform_width = platform.get_frame_width();
-        game_thread.platform_height = platform.get_frame_height();
-        game_thread.platform_window_width = platform.get_window_width();
-        game_thread.platform_window_height = platform.get_window_height();
-        if (game_thread.platform_fullscreen)
-        {
-            platform.set_fullscreen(config::get_var_bool("fullscreen"), config::get_var_int("screen_width"), config::get_var_int("screen_height"));
-            game_thread.platform_fullscreen = false;
-        }
-
-        controls = game::plane_controls();
-        menu_controls = gui::menu_controls();
-
+        //poll input on EVERY pass (~1ms), not once per game frame: previously
+        //the gamepad was polled after end_frame inside this frame-gated loop,
+        //so with a slow game frame a button press waited a full frame before it
+        //was even sampled. Button flags accumulate (OR) between game frames,
+        //analog axes take the latest value - short taps can never be missed.
         bool joy_pause = false;
         for (int i = 0; i < (int)joysticks.size(); ++i)
         {
-            int axes_count = 0, buttons_count = 0;
-            const float *axes = glfwGetJoystickAxes(i, &axes_count);
-            const unsigned char *buttons = glfwGetJoystickButtons(i, &buttons_count);
-            joysticks[i].update(axes, axes_count, buttons, buttons_count);
-            joysticks[i].apply_controls(controls, joy_pause);
-
-            //ToDo:
-            joysticks[i].apply_controls(menu_controls);
-            /*
-            if (!active_game_mode)
+            //prefer GLFW's standardized gamepad layout: raw joystick axis ORDER and
+            //trigger ranges differ per platform and per connection type (USB vs
+            //Bluetooth report different indices), which made a resting trigger feed
+            //the camera_yaw mapping and pulled the default view 90 degrees left.
+            //The gamepad state always reports [LX,LY,RX,RY,LT(0..1),RT(0..1)] and
+            //buttons [A,B,X,Y,LB,RB,back,start,guide,LS,RS,dpad...].
+            GLFWgamepadstate gp;
+            if (glfwGetGamepadState(i, &gp))
+                joysticks[i].update(gp.axes, GLFW_GAMEPAD_AXIS_LAST + 1,
+                                    gp.buttons, GLFW_GAMEPAD_BUTTON_LAST + 1);
+            else
             {
-                //if (i == 0 && !menu.joy_update(axes, axes_count, buttons, buttons_count))
-                    joysticks[i].apply_controls(menu_controls);
+                //no standardized mapping available (this GLFW build rejects the
+                //mapping string injected above for unknown reasons), so rewrite
+                //the KNOWN raw layout of this controller ourselves. Measured with
+                //debug-work/joy_probe.c on macOS (Game Controller framework):
+                //   raw axes   [LX=0, LY=1(down=+1), LT=-1..1@2, RX=3, RY=4(down=+1), RT=-1..1@5]
+                //   raw buttons[A,B,X,Y=0-3, LB=4, RB=5, View=6, Start=7, LS=8, RS=9,
+                //               guide=10(reports stuck pressed), dpad=11-14]
+                // which becomes the standard layout (sticks +1=up, triggers 0..1):
+                //   [LX, LY, RX, RY, LT, RT] / [A,B,X,Y,LB,RB,View,Start,Guide,LS,RS,dpad]
+                const char *jname = glfwGetJoystickName(i);
+                int axes_count = 0, buttons_count = 0;
+                const float *raw_axes = glfwGetJoystickAxes(i, &axes_count);
+                const unsigned char *raw_buttons = glfwGetJoystickButtons(i, &buttons_count);
+
+                if (jname && strstr(jname, "Xbox Wireless") &&
+                    axes_count == 6 && buttons_count == 15)
+                {
+                    float std_axes[6] =
+                    {
+                        raw_axes[0],                     // LX
+                        -raw_axes[1],                    // LY: +1 = up
+                        raw_axes[3],                     // RX
+                        -raw_axes[4],                    // RY: +1 = up
+                        (raw_axes[2] + 1.0f) * 0.5f,     // LT: -1..1 -> 0..1
+                        (raw_axes[5] + 1.0f) * 0.5f      // RT: -1..1 -> 0..1
+                    };
+                    //std button -> raw button (guide left unmapped: raw #10
+                    //reports stuck pressed and nothing binds to it)
+                    static const int raw_of_std[15] =
+                        { 0, 1, 2, 3, 4, 5, 6, 7, -1, 8, 9, 11, 12, 13, 14 };
+                    unsigned char std_buttons[15] = { 0 };
+                    for (int b = 0; b < 15; ++b)
+                        if (raw_of_std[b] >= 0)
+                            std_buttons[b] = raw_buttons[raw_of_std[b]];
+
+                    joysticks[i].update(std_axes, 6, std_buttons, 15);
+                }
+                else
+                    joysticks[i].update(raw_axes, axes_count, raw_buttons, buttons_count);
             }
-            */
+            joysticks[i].apply_controls(controls, joy_pause);
+            joysticks[i].apply_controls(menu_controls);
+
+            //debug: OH_JOYLOG=1 dumps raw + standardized axes every 250ms (stderr),
+            //to pin down axis order on controllers without a gamepad mapping
+            static double joylog_last = 0.0;
+            if (getenv("OH_JOYLOG") && glfwGetTime() - joylog_last > 0.25)
+            {
+                joylog_last = glfwGetTime();
+                int ac = 0;
+                const float *raw = glfwGetJoystickAxes(i, &ac);
+                fprintf(stderr, "JOY%d raw:", i);
+                for (int a = 0; a < ac; ++a)
+                    fprintf(stderr, " %.2f", raw ? raw[a] : 0.0f);
+                if (glfwGetGamepadState(i, &gp))
+                {
+                    fprintf(stderr, "  std:");
+                    for (int a = 0; a <= GLFW_GAMEPAD_AXIS_LAST; ++a)
+                        fprintf(stderr, " %.2f", gp.axes[a]);
+                }
+                fprintf(stderr, "\n");
+            }
         }
 
         if (platform.get_key(GLFW_KEY_W)) controls.throttle = 1.0f;
@@ -560,17 +627,65 @@ int main()
         if (platform.get_key(GLFW_KEY_R)) controls.change_radar = true;
         if (platform.get_key(GLFW_KEY_V)) controls.change_camera = true;
 
-        if (platform.was_pressed(GLFW_KEY_ESCAPE)) menu_controls.prev = true, game_thread.exit = true;
-        if (platform.was_pressed(GLFW_KEY_ENTER)) menu_controls.next = true;
+        //debug: OH_CAMSTICK="pitch,yaw" synthesizes right-stick camera input,
+        //to exercise the free-look pipeline without a gamepad attached
+        static float camstick_x = 0.0f, camstick_y = 0.0f;
+        static bool camstick_init = false;
+        if (!camstick_init)
+        {
+            const char *v = getenv("OH_CAMSTICK");
+            if (v)
+                sscanf(v, "%f,%f", &camstick_x, &camstick_y);
+            camstick_init = true;
+        }
+        if (camstick_x != 0.0f || camstick_y != 0.0f)
+        {
+            controls.cam_rot.x = camstick_x;
+            controls.cam_rot.y = camstick_y;
+        }
 
-        if (platform.was_pressed(GLFW_KEY_P)) game_thread.paused = !game_thread.paused;
+        if(!game_thread.frame_pending)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
+
+        render.push();
+
+        game_thread.controls_update = controls;
+        game_thread.menu_controls_update = menu_controls;
+        game_thread.frame_pending = false;
+
+        //input handed off: accumulate the next game frame from a clean state
+        controls = game::plane_controls();
+        menu_controls = gui::menu_controls();
+
+        render.execute();
+        platform.end_frame();
+
+        if(platform.should_terminate())
+            game_thread.platform_terminate = true;
+        game_thread.platform_width = platform.get_frame_width();
+        game_thread.platform_height = platform.get_frame_height();
+        game_thread.platform_window_width = platform.get_window_width();
+        game_thread.platform_window_height = platform.get_window_height();
+        if (game_thread.platform_fullscreen)
+        {
+            platform.set_fullscreen(config::get_var_bool("fullscreen"), config::get_var_int("screen_width"), config::get_var_int("screen_height"));
+            game_thread.platform_fullscreen = false;
+        }
 
         game_thread.mouse_l = platform.get_mouse_lbtn();
         game_thread.mouse_r = platform.get_mouse_rbtn();
         game_thread.mouse_x = platform.get_mouse_x();
         game_thread.mouse_y = platform.get_mouse_y();
 
-        //speed10x = platform.get_key(GLFW_KEY_RIGHT_SHIFT) && !is_client && !is_server;
+        //edge-detected keys: read exactly once per displayed frame; end_frame()
+        //refreshes m_last_buttons, reading more often would re-trigger
+        if (platform.was_pressed(GLFW_KEY_ESCAPE)) menu_controls.prev = true, game_thread.exit = true;
+        if (platform.was_pressed(GLFW_KEY_ENTER)) menu_controls.next = true;
+
+        if (platform.was_pressed(GLFW_KEY_P)) game_thread.paused = !game_thread.paused;
 
         if (platform.was_pressed(GLFW_KEY_COMMA))
             debug_variable::set(debug_variable::get() - 1);

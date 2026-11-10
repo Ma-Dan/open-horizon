@@ -39,17 +39,22 @@
     </joystick>
 
     <joystick name="Xbox Wireless Controller">
+        <!--axis/button indices below refer to GLFW's STANDARDIZED gamepad layout
+            (glfwGetGamepadState): [LX,LY,RX,RY,LT(0..1),RT(0..1)], A=0,B=1,X=2,Y=3,
+            LB=4,RB=5,View=6,Start=7,Guide=8,LS=9,RS=10,dpad=11..14.
+            The raw macOS layout of this controller is different (right stick on raw
+            axes 3/4, triggers on 2/5 resting at -1, LS/RS on buttons 8/9, guide on
+            10); demo.cpp injects a per-GUID gamepad mapping that rewrites it.-->
 
         <!--left stick-->
         <axis0 control="roll" dead="0.1"/>
-        <axis1 control="pitch" invert="true" dead="0.1"/>
-        <axis1 control="menu_up_down" invert="true" dead="0.5"/>
-        <btn1/>
+        <axis1 control="pitch" dead="0.1"/>
+        <axis1 control="menu_up_down" dead="0.5"/>
 
-        <!--right stick-->
+        <!--right stick (free look, full deflection = 90 degrees)-->
         <axis2 control="camera_yaw" invert="true" dead="0.1"/>
-        <axis3 control="camera_pitch" invert="true" dead="0.1"/>
-        <btn9 control="change_camera"/>
+        <axis3 control="camera_pitch" dead="0.1"/>
+        <btn10 control="change_camera"/>
 
         <!--dpad-->
         <btn11 control="menu_up"/>
@@ -60,7 +65,7 @@
         <!--menu key-->
         <btn7 control="pause"/>
 
-        <!--triggers: left=brake, right=throttle (macOS reports them as axis4/axis5, 0..1)-->
+        <!--triggers: LT=brake, RT=throttle (0..1 in the standardized layout)-->
         <axis4 control="brake" dead="0.5"/>
         <axis5 control="throttle" dead="0.5"/>
 

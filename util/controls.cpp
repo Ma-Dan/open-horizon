@@ -154,11 +154,15 @@ void joystick_config::apply_controls(game::plane_controls &controls, bool &pause
                 case 'ppch': controls.rot.x = v; break;
                 case 'prll': controls.rot.z = v; break;
                 case 'thrt': controls.throttle = v; break;
+                case 'brke': controls.brake = v; break;
 
                 case '+cpc': if (v > 0.0f) controls.cam_rot.x = v; break;
                 case '-cpc': if (v > 0.0f) controls.cam_rot.x = -v; break;
                 case '+cyw': if (v > 0.0f) controls.cam_rot.y = v; break;
                 case '-cyw': if (v > 0.0f) controls.cam_rot.y = -v; break;
+                //absolute right-stick commands (what joystick.xml actually maps)
+                case 'cpch': controls.cam_rot.x = v; break;
+                case 'cyaw': controls.cam_rot.y = v; break;
 
                 default: break;
             }
