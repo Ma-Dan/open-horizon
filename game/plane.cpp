@@ -719,9 +719,20 @@ void plane::update_hud(world &w, gui::hud &h)
     if (hp <= 0)
         return;
 
-    const auto dir = get_dir();
+    const auto vel = get_vel();
+    const float vel_len = vel.length();
+    //HUD FPV (flight path vector): project where the aircraft is actually GOING
+    //(velocity direction), not where the nose points. In a climb/descent or with
+    //angle of attack the flight path sits below/above the boresight; during a
+    //stall it shows the fall direction. Below ~54km/h the velocity is meaningless
+    //(parked, taxi) - fall back to the nose direction.
+    const auto dir = vel_len > 15.0f ? vel / vel_len : get_dir();
     const auto proj_dir = dir * 1000.0f;
     h.set_project_pos(phys->pos + proj_dir);
+
+    //nose (boresight) projection: the speed/alt box, weapon symbols and SAAM
+    //reticle anchor here - the nose reference must not slide around with the FPV
+    h.set_boresight_pos(phys->pos + get_dir() * 1000.0f);
     h.set_pos(phys->pos);
     auto angles = phys->rot.get_euler();
     h.set_angles(angles.x, angles.y, angles.z);

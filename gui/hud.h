@@ -21,6 +21,7 @@ public:
     void set_location(const char *location_name);
     void set_hide(bool value);
     void set_project_pos(const nya_math::vec3 &pos) { m_project_pos = pos; }
+    void set_boresight_pos(const nya_math::vec3 &pos) { m_boresight_pos = pos; }
     void set_pos(const nya_math::vec3 &pos) { m_pos = pos; }
     void set_angles(float pitch, float yaw, float roll) { m_pitch = pitch, m_yaw = yaw, m_roll = roll; }
     void set_speed(int value) { m_speed = value; }
@@ -103,7 +104,8 @@ public:
 
 private:
     typedef nya_math::vec2 vec2;
-    nya_math::vec3 m_project_pos;
+    nya_math::vec3 m_project_pos;      //FPV: where the aircraft is GOING (velocity)
+    nya_math::vec3 m_boresight_pos;   //nose direction projection: speed/alt box and weapon symbols stay here
     nya_math::vec3 m_pos;
     ivalue m_speed;
     bvalue m_ab;

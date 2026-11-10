@@ -219,43 +219,81 @@ void hud::draw(const render &r)
     m_fonts.draw_text(r, buf, "Zurich14", 20, r.get_height() - 20, green);
 
     vec2 proj_pos;
-    if (get_project_pos(r, m_project_pos, proj_pos))
-    {
-        proj_pos.x -= 1.0f;
+    const bool fpv_visible = get_project_pos(r, m_project_pos, proj_pos);
 
+    vec2 bore_pos;
+    if (!get_project_pos(r, m_boresight_pos, bore_pos))
+        bore_pos = fpv_visible ? proj_pos : vec2(r.get_width() * 0.5f, r.get_height() * 0.5f);
+
+    if (fpv_visible)
+    {
+        //flight path vector: a small circle with side wings and a top tick (standard
+        //FPV symbology). NOTE: render::draw(vec2...) treats the whole vector as ONE
+        //continuous line strip, so disjoint segments must be separate draw calls -
+        //sharing one vector draws connectors through the circle.
         if (m_jammed)
             proj_pos += jam_glitch;
 
-        m_fonts.draw_text(r, L"SPEED", "Zurich14", proj_pos.x - 210, proj_pos.y - 33, alert_color);
+        static std::vector<vec2> seg(2);
+        const float R = 9.0f, W = 15.0f, T = 5.0f;
+        static std::vector<vec2> circle(16);
+        for (int s = 0; s < 16; ++s)
+            circle[s] = vec2(cosf(s / 16.0f * 2.0f * nya_math::constants::pi) * R,
+                             sinf(s / 16.0f * 2.0f * nya_math::constants::pi) * R) + proj_pos;
+        r.draw(circle, green, render::transform(), true);
+
+        seg[0] = proj_pos + vec2(-W, 0), seg[1] = proj_pos + vec2(-R, 0);
+        r.draw(seg, green);
+        seg[0] = proj_pos + vec2(R, 0), seg[1] = proj_pos + vec2(W, 0);
+        r.draw(seg, green);
+        seg[0] = proj_pos + vec2(0, -R - T), seg[1] = proj_pos + vec2(0, -R);
+        r.draw(seg, green);
+    }
+
+    if (true)
+    {
+        const vec2 &base = bore_pos;
+
+        m_fonts.draw_text(r, L"SPEED", "Zurich14", base.x - 210, base.y - 33, alert_color);
         swprintf(buf, sizeof(buf), L"%4d", (int)m_speed);
-        m_fonts.draw_text(r, buf, "OCRB15", proj_pos.x - 212, proj_pos.y - 8, alert_color);
-        m_fonts.draw_text(r, L"ALT", "Zurich14", proj_pos.x + 170, proj_pos.y - 33, alert_color);
+        m_fonts.draw_text(r, buf, "OCRB15", base.x - 212, base.y - 8, alert_color);
+        m_fonts.draw_text(r, L"ALT", "Zurich14", base.x + 170, base.y - 33, alert_color);
         swprintf(buf, sizeof(buf), L"%5d", (int)m_alt);
-        m_fonts.draw_text(r, buf, "OCRB15", proj_pos.x + 158, proj_pos.y - 8, alert_color);
+        m_fonts.draw_text(r, buf, "OCRB15", base.x + 158, base.y - 8, alert_color);
 
-        m_common.draw(r, 10, proj_pos.x - 150, proj_pos.y, alert_color);
-        m_common.draw(r, 16, proj_pos.x + 150, proj_pos.y, alert_color);
+        m_common.draw(r, 10, base.x - 150, base.y, alert_color);
+        m_common.draw(r, 16, base.x + 150, base.y, alert_color);
         if (m_ab)
-            m_common.draw(r, 5, proj_pos.x - 245,  proj_pos.y + 2, alert_color);
+            m_common.draw(r, 5, base.x - 245,  base.y + 2, alert_color);
 
-        //m_common.draw(r, 215, proj_pos.x, proj_pos.y, green);
-        m_common.draw(r, m_mgun ? 141 : 2, proj_pos.x, proj_pos.y, green);
+        //nose (boresight) marker: "W"-like chevron at the nose direction projection
+        static std::vector<vec2> nose;
+        nose.clear();
+        nose.push_back(base + vec2(-9.0f, 0.0f));
+        nose.push_back(base + vec2(-4.5f, -7.0f));
+        nose.push_back(base + vec2(0.0f, 0.0f));
+        nose.push_back(base + vec2(4.5f, -7.0f));
+        nose.push_back(base + vec2(9.0f, 0.0f));
+        r.draw(nose, green);
+
+        if (m_mgun)
+            m_common.draw(r, 141, base.x, base.y, green);
 
         if (m_saam_visible)
         {
             render::transform t;
-            t.x = proj_pos.x;
-            t.y = proj_pos.y;
+            t.x = base.x;
+            t.y = base.y;
             r.draw(m_saam_mesh, m_saam_tracking ? red : green, t, m_saam_locked);
         }
 
         if (m_mgp)
-            m_common.draw(r, 145, proj_pos.x, proj_pos.y, green);
+            m_common.draw(r, 145, base.x, base.y, green);
 
         if (m_bomb_target_enabled)
         {
             static std::vector<vec2> line(2);
-            line[0] = proj_pos;
+            line[0] = base;
             if (get_project_pos(r, m_bomb_target.p, line[1]))
             {
                 m_bomb_target_mesh.set_pos(m_bomb_target.p);
@@ -305,15 +343,15 @@ void hud::draw(const render &r)
                         lines.push_back(rp), lines.push_back(rp + vec2(0, -8));
                     }
 
-                    auto fp = vec2(right * 120, rp.y).rotate(-m_roll) + proj_pos;
+                    auto fp = vec2(right * 120, rp.y).rotate(-m_roll) + bore_pos;
                     auto t = std::to_wstring(idx * 5);
                     m_fonts.draw_text(r, t.c_str(), "Zurich12", fp.x - m_fonts.get_text_width(t.c_str(), "Zurich12")/2, fp.y - 6, alert_color);
                 }
             }
 
             render::transform t;
-            t.x = proj_pos.x;
-            t.y = proj_pos.y;
+            t.x = bore_pos.x;
+            t.y = bore_pos.y;
             t.yaw = -m_roll;
             r.draw(lines, alert_color, t, false);
 
@@ -321,9 +359,9 @@ void hud::draw(const render &r)
 
             const float yaw = m_yaw * 180.0f / nya_math::constants::pi;
             auto text = std::to_wstring(int(360 - yaw) % 360);
-            m_fonts.draw_text(r, text.c_str(), "Zurich12", proj_pos.x - m_fonts.get_text_width(text.c_str(), "Zurich12")/2, proj_pos.y - 163, alert_color);
+            m_fonts.draw_text(r, text.c_str(), "Zurich12", bore_pos.x - m_fonts.get_text_width(text.c_str(), "Zurich12")/2, bore_pos.y - 163, alert_color);
 
-            m_common.draw(r, 1, proj_pos.x, proj_pos.y, alert_color);
+            m_common.draw(r, 1, bore_pos.x, bore_pos.y, alert_color);
 
             lines.clear();
             vec2 q(20, 7);
@@ -333,7 +371,7 @@ void hud::draw(const render &r)
             lines.push_back(vec2(-q.x, q.y));
             lines.push_back(vec2(-q.x, -q.y));
 
-            t.y = proj_pos.y - 156;
+            t.y = bore_pos.y - 156;
             t.yaw = 0;
             r.draw(lines, alert_color, t, true);
 
@@ -355,7 +393,7 @@ void hud::draw(const render &r)
 
                 auto lidx = ((idx_yoff + i) * 5 / 90 + 4) % 4;
                 wchar_t letters[][2] = {L"N", L"W", L"S", L"E"};
-                m_fonts.draw_text(r, letters[lidx], "Zurich14", proj_pos.x + x - m_fonts.get_text_width(letters[lidx], "Zurich14") / 2, t.y - 9, green);
+                m_fonts.draw_text(r, letters[lidx], "Zurich14", bore_pos.x + x - m_fonts.get_text_width(letters[lidx], "Zurich14") / 2, t.y - 9, green);
             }
 
             r.draw(lines, alert_color, t, false);
@@ -588,7 +626,7 @@ void hud::draw(const render &r)
         }
     }
 
-    //missiles
+    //missiles: weapon icon + name + remaining count
 
     m_aircraft.draw(r, m_missiles_icon + 401, r.get_width() - 110, r.get_height() - 60, green);
     m_aircraft.draw(r, m_missiles_icon + 406, r.get_width() - 110, r.get_height() - 60, green);
