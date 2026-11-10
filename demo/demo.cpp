@@ -468,15 +468,15 @@ int main()
                     //right-stick free look (see also joystick_config::apply_controls,
                     //which fills controls.cam_rot): stick deflection is the view offset
                     //relative to the flight direction, springing back on release.
-                    //Full deflection = 90 degrees each way, proportional below that -
-                    //the original pi yaw gain mapped half-stick to a full 90 degree jump.
-                    //Skipped while the mouse drags the view, while a target is tracked
-                    //(its block drives the camera) and in the hangar viewer.
+                    //Full deflection = 180 degrees of yaw each way, proportional
+                    //below that. Skipped while the mouse drags the view, while a
+                    //target is tracked (its block drives the camera) and in the
+                    //hangar viewer.
                     if (!mouse_l && !controls.change_target && !viewer_mode)
                     {
                         scene.camera.reset_delta_rot();
                         scene.camera.add_delta_rot(-controls.cam_rot.x * nya_math::constants::pi_2,
-                                                   -controls.cam_rot.y * nya_math::constants::pi_2);
+                                                   -controls.cam_rot.y * nya_math::constants::pi);
                     }
                 }
 
