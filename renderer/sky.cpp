@@ -226,6 +226,11 @@ void sky_mesh::draw()
     m_material.internal().unset();
 
     nya_render::zwrite::enable();
+
+    //restore the scene camera modelview: the sky is drawn first (see
+    //location::draw()), and passes that don't set their own modelview
+    //(e.g. draw_mptx) rely on it being left in camera space
+    nya_render::set_modelview_matrix(nya_scene::get_camera().get_view_matrix());
 }
 
 //------------------------------------------------------------

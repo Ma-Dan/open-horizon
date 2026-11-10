@@ -107,13 +107,30 @@ void location::update(int dt)
 
 void location::draw()
 {
-    m_location.draw_mptx();
-    m_location.draw_trees();
-    m_location.draw_landscape();
-    m_location.draw_mptx_transparent();
+    //sky first: it never writes depth, so everything drawn afterwards overwrites it.
+    //Drawing it last (as before) required a far-plane depth clamp in sky.nsh; with
+    //LEQUAL that clamp makes the sky overwrite terrain beyond ~19km (visible as a
+    //sharp "spherical boundary" arc around the aircraft at 3000ft+). Drawing it
+    //first removes that interaction entirely; the clamp only needs to survive the
+    //clip stage (see sky.nsh comment).
+    if (!getenv("OH_NOSKY"))
+        m_sky.draw();
 
-    m_sky.draw();
-    m_sun.draw();
+    const bool no_mptx = getenv("OH_NOMPTX") != nullptr;
+
+    if (!no_mptx)
+        m_location.draw_mptx();
+
+    if (!getenv("OH_NOTREES"))
+        m_location.draw_trees();
+
+    m_location.draw_landscape();
+
+    if (!no_mptx)
+        m_location.draw_mptx_transparent();
+
+    if (!getenv("OH_NOSUN"))
+        m_sun.draw();
 
     //nya_render::set_modelview_matrix(nya_scene::get_camera().get_view_matrix());
     //m_location.draw_cols();

@@ -8,6 +8,7 @@
 #include "util/location.h"
 #include "renderer/texture.h"
 #include <algorithm>
+#include <stdlib.h>
 
 namespace renderer
 {
@@ -296,7 +297,18 @@ void scene::draw()
 
 void scene::draw_scene(const char *pass,const nya_scene::tags &t)
 {
-    camera.set_near_far(1.0, 21000.0);
+    //far clip distance. 21000 (the old value) cuts terrain at 21km, which from
+    //3000ft+ shows as a sharp curved "spherical boundary" on the ground where the
+    //sky's fog-white shows through. 50000 keeps terrain+clouds drawn out to the
+    //map edge (~36km+), where the fog is fully saturated, so the clip edge is
+    //invisible. OH_FARDIST=N.N still overrides for debugging.
+    static float far_dist = -1.0f;
+    if (far_dist < 0.0f)
+    {
+        const char *v = getenv("OH_FARDIST");
+        far_dist = v ? (float)atof(v) : 50000.0f;
+    }
+    camera.set_near_far(1.0, far_dist);
 
     if (t.has("location"))
         m_location.draw();
@@ -410,9 +422,15 @@ void scene::draw_scene(const char *pass,const nya_scene::tags &t)
         }
     }
     if (t.has("clouds_flat"))
-        m_clouds.draw_flat();
+    {
+        if (!getenv("OH_NOFLATCLOUDS"))
+            m_clouds.draw_flat();
+    }
     if (t.has("clouds_obj"))
-        m_clouds.draw_obj();
+    {
+        if (!getenv("OH_NOOBJCLOUDS"))
+            m_clouds.draw_obj();
+    }
     if (t.has("flare"))
         m_flare.draw();
 }
