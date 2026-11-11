@@ -307,6 +307,7 @@ unsigned int joystick_config::convert_cmd(const std::string &cmd)
     if (cmd == "mgun") return 'mgun';
 
     if (cmd == "menu_up_down") return 'm_ud';
+    if (cmd == "menu_left_right") return 'm_lr';
     if (cmd == "menu_up") return 'm_up';
     if (cmd == "menu_down") return 'm_dn';
     if (cmd == "menu_left") return 'm_lf';

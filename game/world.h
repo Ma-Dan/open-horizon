@@ -83,7 +83,24 @@ public:
     void stop_sound_ui(unsigned int id);
     void play_sound(std::string name, int idx, vec3 pos);
 
-    world(renderer::world &w, sound::world &s, gui::hud &h): m_render_world(w), m_sound_world(s), m_hud(h), m_network(0) {}
+    world(renderer::world &w, sound::world &s, gui::hud &h): m_render_world(w), m_sound_world(s), m_hud(h), m_network(0)
+    {
+        //debug: dump every parsed ArmsParam.txt entry (lockon ranges/angles,
+        //speeds, damage...) so the original weapon feel can be inspected without
+        //unpacking the PAC archives. OH_DUMP_ARMS=path/to/file.txt
+        if (const char *dump = getenv("OH_DUMP_ARMS"))
+        {
+            if (FILE *f = fopen(dump, "w"))
+            {
+                const auto &ap = get_arms_param();
+                for (auto &i: ap.m_float_params)
+                    fprintf(f, "float %s : %g\n", i.first.c_str(), i.second);
+                for (auto &i: ap.m_int_params)
+                    fprintf(f, "int %s : %d\n", i.first.c_str(), i.second);
+                fclose(f);
+            }
+        }
+    }
 
 private:
     void update_difficulty();
