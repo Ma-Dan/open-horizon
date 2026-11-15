@@ -289,7 +289,23 @@ void scene::draw()
     {
         hud.draw(ui_render);
         if (m_paused)
-            ui_fonts.draw_text(ui_render, L"PAUSED", "ZurichBD20outline", ui_render.get_width() * 0.5 - 45, ui_render.get_height() * 0.5, white);
+        {
+            //dark overlay
+            std::vector<gui::rect_pair> overlay(1);
+            overlay[0].r = gui::rect(0, 0, ui_render.get_width(), ui_render.get_height());
+            overlay[0].tc = gui::rect(0, 0, 1, 1);
+            ui_render.draw(overlay, shared::get_white_texture(),
+                           nya_math::vec4(0.0f, 0.0f, 0.0f, 0.5f));
+
+            int cx = ui_render.get_width() / 2;
+            int cy = ui_render.get_height() / 2;
+            ui_fonts.draw_text(ui_render, L"PAUSED", "ZurichBD20outline",
+                               cx - 45, cy - 40, white);
+            ui_fonts.draw_text(ui_render, L"START  Resume",
+                               "Zurich20", cx - 60, cy + 10, white);
+            ui_fonts.draw_text(ui_render, L"B      Exit to Menu",
+                               "Zurich20", cx - 60, cy + 35, white);
+        }
     }
 }
 

@@ -523,6 +523,12 @@ int main()
 
     auto controls = game::plane_controls();
     auto menu_controls = gui::menu_controls();
+
+    //edge-detect state for gamepad pause/exit (mirrors iOS on_frame logic)
+    bool prev_joy_pause = false;
+    bool prev_b = false;
+    bool menu_suppress = false;
+
     while (!game_thread.platform_terminate)
     {
         //poll input on EVERY pass (~1ms), not once per game frame: previously
@@ -531,6 +537,7 @@ int main()
         //was even sampled. Button flags accumulate (OR) between game frames,
         //analog axes take the latest value - short taps can never be missed.
         bool joy_pause = false;
+        bool joy_b_pressed = false;
         for (int i = 0; i < (int)joysticks.size(); ++i)
         {
             //prefer GLFW's standardized gamepad layout: raw joystick axis ORDER and
@@ -584,9 +591,29 @@ int main()
                 }
                 else
                     joysticks[i].update(raw_axes, axes_count, raw_buttons, buttons_count);
+
+                //B = raw button 1 on Xbox Wireless, or std button 1 otherwise
+                if (raw_buttons && buttons_count > 1)
+                    joy_b_pressed = joy_b_pressed || raw_buttons[1];
             }
             joysticks[i].apply_controls(controls, joy_pause);
-            joysticks[i].apply_controls(menu_controls);
+
+            //read raw B button state for pause-exit edge detection
+            //(B=btn1 in standardized layout, maps to menu_next in joystick.xml,
+            // but menu_next is also set by keyboard Space and dpad-right,
+            // so we need the raw button to distinguish a B press)
+            if (glfwGetGamepadState(i, &gp))
+                joy_b_pressed = joy_b_pressed || gp.buttons[GLFW_GAMEPAD_BUTTON_B];
+
+            //suppress menu navigation while B is held after exiting pause,
+            //so the same B press (mapped to menu_next) doesn't re-launch
+            if (menu_suppress)
+            {
+                if (!joy_b_pressed)
+                    menu_suppress = false;
+            }
+            else
+                joysticks[i].apply_controls(menu_controls);
 
             //debug: OH_JOYLOG=1 dumps raw + standardized axes every 250ms (stderr),
             //to pin down axis order on controllers without a gamepad mapping
@@ -608,6 +635,20 @@ int main()
                 fprintf(stderr, "\n");
             }
         }
+
+        //gamepad pause/exit logic (edge-detected, mirrors iOS on_frame)
+        if (joy_pause && !prev_joy_pause)
+            game_thread.paused = !game_thread.paused;
+        prev_joy_pause = joy_pause;
+
+        if (joy_b_pressed && !prev_b && game_thread.paused)
+        {
+            game_thread.exit = true;
+            game_thread.paused = false;
+            menu_controls = gui::menu_controls();
+            menu_suppress = true;
+        }
+        prev_b = joy_b_pressed;
 
         if (platform.get_key(GLFW_KEY_W)) controls.throttle = 1.0f;
         if (platform.get_key(GLFW_KEY_S)) controls.brake = 1.0f;

@@ -75,12 +75,12 @@
         <btn4 control="-yaw"/>
         <btn5 control="+yaw"/>
 
-        <!--buttons: A=mgun, B=missile, X=change_weapon, Y=change_target, View=flares-->
+        <!--buttons: A=mgun, B=missile, X=change_weapon, Y=change_target, View=change_radar-->
         <btn2 control="change_weapon"/>
         <btn3 control="change_target"/>
         <btn1 control="missile"/>
         <btn0 control="mgun"/>
-        <btn6 control="flares"/>
+        <btn6 control="change_radar"/>
         <btn1 control="menu_next"/>
         <btn0 control="menu_prev"/>
     </joystick>
